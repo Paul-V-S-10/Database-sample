@@ -261,6 +261,17 @@ app.post('/Place', async (req, res) => {
   })
 })
 
+app.get("/Place", async (req, res) => {
+  try {
+    const place = await Place.find().populate("districtId");
+    if (place.length === 0) {
+      return res.status(404).json({ message: "Place not found" });
+    }
+    res.status(200).json(place);
+  } catch (err) {
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
 
 app.get('/Place/:id', async (req, res) => {
   try {
@@ -418,11 +429,11 @@ const subcategorySchemaStructure = new Schema({
   },
   category_id: {
     type: Schema.Types.ObjectId,
-    ref: 'categoryschema',
+    ref: 'categorySchema',
     required: true
   }
 })
-const Subcategory = model("subcatehorySchema", subcategorySchemaStructure);
+const Subcategory = model("subcategorySchema", subcategorySchemaStructure);
 
 app.post("/Subcategory", async (req, res) => {
 
@@ -440,7 +451,7 @@ app.post("/Subcategory", async (req, res) => {
 
 app.get('/Subcategory/:id', async (req, res) => {
   try {
-    const subcategory = await Subcategory.find({ category_id: req.params.id })
+    const subcategory = await Subcategory.find({ category_id: req.params.id }).populate('category_id');
     if (subcategory.length === 0) {
       return res.status(404).json({ message: "Admin not found" });
     }
@@ -602,7 +613,7 @@ const userSchemaStructure = new Schema({
   },
   placeId: {
     type: Schema.Types.ObjectId,
-    ref: 'placeschema',
+    ref: 'placeSchema',
     required: true
   }
 });
@@ -631,7 +642,7 @@ app.post("/User", async (req, res) => {
 
 app.get('/User/:id', async (req, res) => {
   try {
-    const user = await User.find({ placeId: req.params.id })
+    const user = await User.find({ placeId: req.params.id }).populate("placeId");
     if (user.length === 0) {
       return res.status(404).json({ message: "user not found" });
     }
@@ -706,11 +717,13 @@ const productSchemaStructure = new Schema({
     required: true,
   },
   brand_id: {
-    type: String,
+    type: Schema.Types.ObjectId,
+    ref: 'brandSchema',
     required: true,
   },
   subcategory_id: {
-    type: String,
+    type: Schema.Types.ObjectId,
+    ref: 'subcategorySchema',
     required: true,
   }
 });
@@ -738,17 +751,90 @@ app.post("/Product", async (req, res) => {
 
 });
 
+// app.get("/Product", async (req, res) => {
+//   try {
+//     const product = await Product.find().populate("brand_id").populate("subcategory_id");
+//     if (product.length === 0) {
+//       return res.status(404).json({ message: "Product not found" });
+//     }
+//     res.status(200).json(product);
+//   } catch (err) {
+//     console.log(err);
+//     res.status(500).json({ message: "Internal server error" });
+//   }
+// });
+
+
+
 app.get("/Product", async (req, res) => {
   try {
-    const product = await Product.find();
+    const product = await Product.aggregate([
+      {
+        $lookup: {
+          from: "subcategoryschemas", // Collection name of PostHead model
+          localField: "subcategory_id",
+          foreignField: "_id",
+          as: "SubCategory",
+        },
+      },
+      {
+        $unwind: "$SubCategory", // Deconstructs the postHead array created by $lookup
+      },
+      {
+        $lookup: {
+          from: "brandschemas", // Collection name of User model
+          localField: "brand_id",
+          foreignField: "_id",
+          as: "Brand",
+        },
+      },
+      {
+        $unwind: "$Brand", // Deconstructs the user array created by $lookup
+      },
+     
+      {
+        $lookup: {
+          from: "categoryschemas", // Collection name of User model
+          localField: "SubCategory.category_id",
+          foreignField: "_id",
+          as: "Category",
+        },
+      },
+      {
+        $unwind: "$Category", // Deconstructs the user array created by $lookup
+      },
+     
+      {
+        $project: {
+          // Select fields to include in the final output
+          _id: 1,
+          product_name: 1,
+          product_details: 1,
+          product_price: 1,
+          product_photo: 1,
+          brand_id: 1,
+          subcategory_id: 1,
+          brand_name: "$Brand.brand_name",
+          subcategory_name: "$SubCategory.subcategory_name",
+          category_name: "$Category.category_name",
+          category_id: "$Category._id",
+   
+          
+         
+        },
+      }
+    ]);
     if (product.length === 0) {
       return res.status(404).json({ message: "Product not found" });
     }
     res.status(200).json(product);
   } catch (err) {
+    console.log(err);
     res.status(500).json({ message: "Internal server error" });
   }
 });
+
+
 
 
 app.delete("/Product/:id", async (req, res) => {
@@ -814,8 +900,9 @@ const sellerSchemaStructure = new Schema({
     required: true,
   },
   place_id: {
-    type: String,
-    required: true,
+    type: Schema.Types.ObjectId,
+    ref: 'placeSchema',
+    required: true
   },
   seller_photo: {
     type: String,
@@ -851,7 +938,7 @@ app.post("/Seller", async (req, res) => {
 
 app.get("/Seller", async (req, res) => {
   try {
-    const seller = await Seller.find();
+    const seller = await Seller.find().populate("place_id");
     if (seller.length === 0) {
       return res.status(404).json({ message: "Seller not found" });
     }
@@ -923,7 +1010,7 @@ const stockSchemaStructure = new Schema({
   },
   product_id: {
     type: Schema.Types.ObjectId,
-    ref:'productschema',
+    ref: 'productSchema',
     required: true
   },
 });
@@ -934,10 +1021,10 @@ app.post("/Stock", async (req, res) => {
 
   const stock = new Stock(req.body);
 
-await stock.save();  
+  await stock.save();
 
   res.send({
-      message: 'Inserted Successfully',
+    message: 'Inserted Successfully',
   });
 
 });
@@ -945,31 +1032,31 @@ await stock.save();
 
 app.get("/Stock", async (req, res) => {
   try {
-      const stock = await Stock.find();
-      if (stock.length === 0) {
-          return res.status(404).json({ message: "Stock not found" });
-      }
-      res.status(200).json(stock);
+    const stock = await Stock.find().populate("product_id");
+    if (stock.length === 0) {
+      return res.status(404).json({ message: "Stock not found" });
+    }
+    res.status(200).json(stock);
   } catch (err) {
-      res.status(500).json({ message: "Internal server error" });
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
 
 app.delete("/Stock/:id", async (req, res) => {
   try {
-      const stockId = req.params.id; 
-      const deletedStock = await Stock.findByIdAndDelete(stockId);
+    const stockId = req.params.id;
+    const deletedStock = await Stock.findByIdAndDelete(stockId);
 
-      if (!deletedStock) {
-          return res.status(404).json({ message: "Stock not found" });
-      }
-      res.json({ message: "Stock deleted successfully", deletedStock });
+    if (!deletedStock) {
+      return res.status(404).json({ message: "Stock not found" });
+    }
+    res.json({ message: "Stock deleted successfully", deletedStock });
   } catch (err) {
-      console.error("Error deleting Stock:", err);
-      res.status(500).json({ message: "Internal server error" });
+    console.error("Error deleting Stock:", err);
+    res.status(500).json({ message: "Internal server error" });
   }
-}); 
+});
 
 
 app.patch("/Stock/:id", async (req, res) => {
